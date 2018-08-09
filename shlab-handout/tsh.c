@@ -85,6 +85,9 @@ void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 
+//Helper functions I have implemented
+pid_t Fork(void);
+
 /*
  * main - The shell's main routine 
  */
@@ -165,6 +168,38 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+    char * argv[MAXARGS];
+    pid_t pid;
+    char buf[MAXLINE];
+    int bg;
+
+    strcpy(buf, cmdline);
+    bg = parseline(buf, argv);
+
+    if(argv[0] == NULL) return; //avoid empty lines
+
+    if(!builtin_cmd(argv)) {
+        if((pid = Fork()) == 0) {
+            if((!setpgid(0,0)) < 0 ) unix_error("Failed to create job group");       //group the new child in a seperate group from the parent
+            printf("the job id is %d ", pid);
+            printf("the job state is %d ", (bg) ? (2) : (1));
+            if(!addjob(jobs, getpid(), (bg) ? (2) : (1), buf)) unix_error("Failed to create job ");
+            if(execve(argv[0], argv, environ) < 0) {
+                unix_error("Command not found ");
+                _exit(0);
+            }
+        }
+    }
+
+    //wait for forground process to finish
+    if(!bg) {
+        int statue;
+        if(waitpid(pid, &statue, 0) < 0) {
+            unix_error("waitpid error ");
+        } else {
+            printf("%d, %s ", pid, cmdline);
+        }
+    }
     return;
 }
 
@@ -248,6 +283,17 @@ void do_bgfg(char **argv)
 void waitfg(pid_t pid)
 {
     return;
+}
+
+//fork function error wrapper
+
+pid_t Fork(void) {
+    pid_t pid;
+    if((pid = fork()) < 0) {
+        unix_error("Fork error");
+    }
+    printf("the job id according to fork is %d ", pid);
+    return pid;
 }
 
 /*****************
