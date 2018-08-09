@@ -87,7 +87,11 @@ handler_t *Signal(int signum, handler_t *handler);
 
 //Helper functions I have implemented
 pid_t Fork(void);
-
+void Sigfillset(sigset_t * mask);
+void Strcpy(char * dest, char * src);
+void Sigemptyset(sigset_t * mask);
+void Sigaddset(sigset_t * mask,int signum);
+void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
 /*
  * main - The shell's main routine 
  */
@@ -172,17 +176,21 @@ void eval(char *cmdline)
     pid_t pid;
     char buf[MAXLINE];
     int bg;
+    sigset_t maskAll, maskPrev, maskOne;
 
-    strcpy(buf, cmdline);
+    Sigfillset(&maskAll);
+    Sigemptyset(&maskOne);
+    Sigaddset(&maskOne, SIGCHLD);
+
+    Strcpy(buf, cmdline);
     bg = parseline(buf, argv);
 
     if(argv[0] == NULL) return; //avoid empty lines
 
     if(!builtin_cmd(argv)) {
+
         if((pid = Fork()) == 0) {
             if((!setpgid(0,0)) < 0 ) unix_error("Failed to create job group");       //group the new child in a seperate group from the parent
-            printf("the job id is %d ", pid);
-            printf("the job state is %d ", (bg) ? (2) : (1));
             if(!addjob(jobs, getpid(), (bg) ? (2) : (1), buf)) unix_error("Failed to create job ");
             if(execve(argv[0], argv, environ) < 0) {
                 unix_error("Command not found ");
@@ -198,6 +206,7 @@ void eval(char *cmdline)
             unix_error("waitpid error ");
         } else {
             printf("%d, %s ", pid, cmdline);
+            if(!deletejob(jobs, pid)) unix_error("Job removal error");
         }
     }
     return;
@@ -292,10 +301,47 @@ pid_t Fork(void) {
     if((pid = fork()) < 0) {
         unix_error("Fork error");
     }
-    printf("the job id according to fork is %d ", pid);
     return pid;
 }
 
+void Sigfillset(sigset_t * mask) {
+    int state;
+    if((state = sigfillset(mask)) < 0) {
+        unix_error("sigfillset Error");
+        _exit(-1);
+    }
+}
+
+void Sigemptyset(sigset_t * mask) {
+    int state;
+    if((state = sigemptyset(mask)) < 0) {
+        unix_error("sigemptyset Error");
+        _exit(-1);
+    }
+}
+
+void Sigaddset(sigset_t * mask,int signum) {
+    int state;
+    if((state = sigaddset(mask, signum)) < 0) {
+        unix_error("sigaddset Error");
+        _exit(-1);
+    }
+}
+
+void Strcpy(char * dest, char * src) {
+    char * state;
+    if((state = strcpy(dest, src)) == NULL) {
+        unix_error("strcpy Error");
+    }
+}
+
+void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
+    int state;
+    if((state = sigprocmask(how, set, oldset)) < 0) {
+        unix_error("sigprocmask Error");
+        _exit(-1);
+    }
+}
 /*****************
  * Signal handlers
  *****************/
