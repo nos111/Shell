@@ -188,7 +188,7 @@ void eval(char *cmdline)
     if(argv[0] == NULL) return; //avoid empty lines
 
     if(!builtin_cmd(argv)) {
-
+        Sigprocmask(SIG_BLOCK, &maskOne, &maskPrev);
         if((pid = Fork()) == 0) {
             if((!setpgid(0,0)) < 0 ) unix_error("Failed to create job group");       //group the new child in a seperate group from the parent
             if(!addjob(jobs, getpid(), (bg) ? (2) : (1), buf)) unix_error("Failed to create job ");
@@ -206,7 +206,7 @@ void eval(char *cmdline)
             unix_error("waitpid error ");
         } else {
             printf("%d, %s ", pid, cmdline);
-            if(!deletejob(jobs, pid)) unix_error("Job removal error");
+            if(deletejob(jobs, pid)) unix_error("Job removal error");
         }
     }
     return;
@@ -443,7 +443,6 @@ int addjob(struct job_t *jobs, pid_t pid, int state, char *cmdline)
 int deletejob(struct job_t *jobs, pid_t pid) 
 {
     int i;
-
     if (pid < 1)
 	return 0;
 
