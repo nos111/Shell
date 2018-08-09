@@ -188,15 +188,18 @@ void eval(char *cmdline)
     if(argv[0] == NULL) return; //avoid empty lines
 
     if(!builtin_cmd(argv)) {
-        Sigprocmask(SIG_BLOCK, &maskOne, &maskPrev);
+        Sigprocmask(SIG_BLOCK, &maskOne, &maskPrev);    //block sigchild 
         if((pid = Fork()) == 0) {
+            Sigprocmask(SIG_SETMASK, &maskPrev, NULL);  //unblock for the child process
             if((!setpgid(0,0)) < 0 ) unix_error("Failed to create job group");       //group the new child in a seperate group from the parent
-            if(!addjob(jobs, getpid(), (bg) ? (2) : (1), buf)) unix_error("Failed to create job ");
             if(execve(argv[0], argv, environ) < 0) {
                 unix_error("Command not found ");
                 _exit(0);
             }
         }
+        Sigprocmask(SIG_BLOCK, &maskAll, NULL);         //block all parent signals
+        if(!addjob(jobs, getpid(), (bg) ? (2) : (1), buf)) unix_error("Failed to create job ");
+        Sigprocmask(SIG_SETMASK, &maskPrev, NULL);      //unblock after adding 
     }
 
     //wait for forground process to finish
