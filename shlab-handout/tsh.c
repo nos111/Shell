@@ -92,6 +92,10 @@ void Strcpy(char * dest, char * src);
 void Sigemptyset(sigset_t * mask);
 void Sigaddset(sigset_t * mask,int signum);
 void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+void Kill(pid_t pid, int sig);
+void Quit(struct job_t * jobs);
+int validPid(char ** argv);
+
 /*
  * main - The shell's main routine 
  */
@@ -280,15 +284,29 @@ int builtin_cmd(char **argv)
         return 1;
     }
     if(strcmp(*argv, "bg") == 0) {
+        if(!validPid(argv)) {
+            printf("bg command requires PID or jobid argument \n");
+            return 1;
+        }
         do_bgfg(&argv[1]);
         return 1;
     }
     if(strcmp(*argv, "fg") == 0) {
+        if(!validPid(argv)) {
+            printf("fg command requires PID or jobid argument \n");
+            return 1;
+        }
         do_bgfg(&argv[1]);
         return 1;
     }
     if(strcmp(*argv, "kill") == 0) {
-        listjobs(jobs);
+        pid_t pid;
+        pid = atoi(argv[1]);
+        Kill(pid, SIGKILL);
+        return 1;
+    }
+    if(strcmp(*argv, "quit") == 0) {
+        Quit(jobs);
         return 1;
     }
     return 0;     /* not a builtin command */
@@ -301,8 +319,19 @@ void do_bgfg(char **argv)
 {
     pid_t pid;
     struct job_t * job;
-    pid = atoi(*argv);
-    job = getjobpid(jobs, pid);
+    if(*argv[1] == '%') {
+        argv = &argv[1];
+        job = getjobjid(jobs, *argv);
+        pid = job->pid;
+    }else {
+        pid = atoi(*argv);
+        job = getjobpid(jobs, pid);
+    }
+    
+    if(job == NULL) {
+        printf("No such job \n");
+        return;
+    }
     if(job->state == BG) {
         job->state = FG;
         waitfg(pid);
@@ -310,7 +339,6 @@ void do_bgfg(char **argv)
     }
     if(job->state == FG) {
         job->state = BG;
-        waitfg(pid);
         return;
     }
     return;
@@ -387,7 +415,19 @@ void Kill(pid_t pid, int sig) {
     }
 }
 
+void Quit(struct job_t * jobs) {
+    for(int i = 0; i < MAXJOBS; i++) {
+        Kill(jobs[i].pid, SIGKILL);
+    }
+}
 
+int validPid(char ** argv) {
+    if(argv[1] == NULL) return 0;
+    if(*argv[1] >= '0' && *argv[1] <= '9') return 1;
+    if(!((*argv[1] == '%')&&(*argv[2] >= '0' && *argv[2] <= '9'))) return 0;
+    return 1;
+
+}
 /*****************
  * Signal handlers
  *****************/
@@ -407,7 +447,6 @@ void sigchld_handler(int sig)
     while((pid = waitpid(-1, &state, WNOHANG)) > 0) {
         job = getjobpid(jobs, pid);
         job->state = ST;
-        printf("reaped child \n");
         if(!deletejob(jobs, pid)) unix_error("Job removal error");
     }
     return;
