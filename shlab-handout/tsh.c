@@ -92,7 +92,6 @@ void Strcpy(char * dest, char * src);
 void Sigemptyset(sigset_t * mask);
 void Sigaddset(sigset_t * mask,int signum);
 void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
-void waitAndReap(pid_t pid);
 /*
  * main - The shell's main routine 
  */
@@ -191,7 +190,7 @@ void eval(char *cmdline)
     if(!builtin_cmd(argv)) {
         Sigprocmask(SIG_BLOCK, &maskOne, &maskPrev);    //block sigchild 
         if((pid = Fork()) == 0) {
-            Sigprocmask(SIG_SETMASK, &maskPrev, NULL);  //unblock for the child process
+            Sigprocmask(SIG_SETMASK, NULL, NULL);  //unblock for the child process
             if((!setpgid(0,0)) < 0 ) unix_error("Failed to create job group");       //group the new child in a seperate group from the parent
             if(execve(argv[0], argv, environ) < 0) {
                 unix_error("Command not found ");
@@ -208,7 +207,7 @@ void eval(char *cmdline)
 
     //wait for forground process to finish
     if(!bg) {
-        waitAndReap(pid);
+        waitfg(pid);
     }
     return;
 }
@@ -304,14 +303,14 @@ void do_bgfg(char **argv)
     struct job_t * job;
     pid = atoi(*argv);
     job = getjobpid(jobs, pid);
-    printf("job %d, pid %d", job->state, pid);
     if(job->state == BG) {
-        waitAndReap(pid);
+        job->state = FG;
+        waitfg(pid);
         return;
     }
-    //still need fixing
     if(job->state == FG) {
-        waitAndReap(pid);
+        job->state = BG;
+        waitfg(pid);
         return;
     }
     return;
@@ -322,6 +321,11 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    struct job_t * job;
+    job = getjobpid(jobs, pid);
+    while(job->state == FG) {
+        sleep(1);
+    }
     return;
 }
 
@@ -374,15 +378,15 @@ void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
     }
 }
 
-void waitAndReap(pid_t pid) {
-    int statue;
-    if(waitpid(pid, &statue, 0) < 0) {
-        unix_error("waitpid error ");
-    } else {
-        printf("%d ", pid);
-        if(!deletejob(jobs, pid)) unix_error("Job removal error");
+void Kill(pid_t pid, int sig) {
+    int state;
+    kill(pid, sig);
+    if((state = kill(pid, sig)) < 0) {
+        unix_error("kill Error");
+        _exit(-1);
     }
 }
+
 
 /*****************
  * Signal handlers
@@ -399,7 +403,10 @@ void sigchld_handler(int sig)
 {
     int state;
     pid_t pid;
+    struct job_t * job;
     while((pid = waitpid(-1, &state, WNOHANG)) > 0) {
+        job = getjobpid(jobs, pid);
+        job->state = ST;
         printf("reaped child \n");
         if(!deletejob(jobs, pid)) unix_error("Job removal error");
     }
@@ -413,6 +420,12 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+    pid_t pid;
+    struct job_t * job;
+    if((pid = fgpid(jobs)) == 0) return;
+    job = getjobpid(jobs, pid);
+    job->state = ST;
+    Kill(-pid, sig);
     return;
 }
 
@@ -423,6 +436,12 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    pid_t pid;
+    struct job_t * job;
+    if((pid = fgpid(jobs)) == 0) return;
+    job = getjobpid(jobs, pid);
+    job->state = ST;
+    Kill(-pid, sig);
     return;
 }
 
