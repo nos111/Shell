@@ -92,6 +92,7 @@ void Strcpy(char * dest, char * src);
 void Sigemptyset(sigset_t * mask);
 void Sigaddset(sigset_t * mask,int signum);
 void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+void waitAndReap(pid_t pid);
 /*
  * main - The shell's main routine 
  */
@@ -198,19 +199,16 @@ void eval(char *cmdline)
             }
         }
         Sigprocmask(SIG_BLOCK, &maskAll, NULL);         //block all parent signals
-        if(!addjob(jobs, getpid(), (bg) ? (2) : (1), buf)) unix_error("Failed to create job ");
+        
+        if(!addjob(jobs, pid, (bg) ? (2) : (1), buf)) unix_error("Failed to create job ");
         Sigprocmask(SIG_SETMASK, &maskPrev, NULL);      //unblock after adding 
+    } else {
+        return;
     }
 
     //wait for forground process to finish
     if(!bg) {
-        int statue;
-        if(waitpid(pid, &statue, 0) < 0) {
-            unix_error("waitpid error ");
-        } else {
-            printf("%d, %s ", pid, cmdline);
-            if(deletejob(jobs, pid)) unix_error("Job removal error");
-        }
+        waitAndReap(pid);
     }
     return;
 }
@@ -278,6 +276,22 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
+    if(strcmp(*argv, "jobs") == 0) {
+        listjobs(jobs);
+        return 1;
+    }
+    if(strcmp(*argv, "bg") == 0) {
+        do_bgfg(&argv[1]);
+        return 1;
+    }
+    if(strcmp(*argv, "fg") == 0) {
+        do_bgfg(&argv[1]);
+        return 1;
+    }
+    if(strcmp(*argv, "kill") == 0) {
+        listjobs(jobs);
+        return 1;
+    }
     return 0;     /* not a builtin command */
 }
 
@@ -286,6 +300,20 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+    pid_t pid;
+    struct job_t * job;
+    pid = atoi(*argv);
+    job = getjobpid(jobs, pid);
+    printf("job %d, pid %d", job->state, pid);
+    if(job->state == BG) {
+        waitAndReap(pid);
+        return;
+    }
+    //still need fixing
+    if(job->state == FG) {
+        waitAndReap(pid);
+        return;
+    }
     return;
 }
 
@@ -345,6 +373,17 @@ void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
         _exit(-1);
     }
 }
+
+void waitAndReap(pid_t pid) {
+    int statue;
+    if(waitpid(pid, &statue, 0) < 0) {
+        unix_error("waitpid error ");
+    } else {
+        printf("%d ", pid);
+        if(!deletejob(jobs, pid)) unix_error("Job removal error");
+    }
+}
+
 /*****************
  * Signal handlers
  *****************/
@@ -358,6 +397,12 @@ void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
  */
 void sigchld_handler(int sig) 
 {
+    int state;
+    pid_t pid;
+    while((pid = waitpid(-1, &state, WNOHANG)) > 0) {
+        printf("reaped child \n");
+        if(!deletejob(jobs, pid)) unix_error("Job removal error");
+    }
     return;
 }
 
