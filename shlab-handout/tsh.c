@@ -319,7 +319,8 @@ void do_bgfg(char **argv)
 {
     pid_t pid;
     struct job_t * job;
-    if(*argv[1] == '%') {
+    if(strcmp(*argv, "%") == 0) {
+        printf("got here \n");
         argv = &argv[1];
         job = getjobjid(jobs, *argv);
         pid = job->pid;
@@ -424,7 +425,8 @@ void Quit(struct job_t * jobs) {
 int validPid(char ** argv) {
     if(argv[1] == NULL) return 0;
     if(*argv[1] >= '0' && *argv[1] <= '9') return 1;
-    if(!((*argv[1] == '%')&&(*argv[2] >= '0' && *argv[2] <= '9'))) return 0;
+    printf("%s \n", argv[1]);
+    if(!((strcmp(argv[1],"%") == 0))) return 0;
     return 1;
 
 }
